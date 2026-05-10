@@ -572,6 +572,8 @@ function onCellClick(e) {
   const playerIdx = parseInt(td.dataset.player);
   const catId = td.dataset.cat;
 
+  console.log('Cell clicked:', {catId, playerIdx, locked: td.classList.contains('locked'), filled: td.classList.contains('filled')});
+
   // Yahtzee Bonus toggle — handle before locked/filled checks
   if (catId === 'yahtzeBonus') {
     if (playerIdx !== currentPlayer) return;
@@ -584,12 +586,22 @@ function onCellClick(e) {
     return;
   }
 
-  if (td.classList.contains('locked')) return;
-  if (td.classList.contains('filled') || td.classList.contains('scratch')) return;
+  if (td.classList.contains('locked')) {
+    console.log('Cell is locked');
+    return;
+  }
+  if (td.classList.contains('filled') || td.classList.contains('scratch')) {
+    console.log('Cell already filled/scratched');
+    return;
+  }
 
   const cat = [...UPPER,...LOWER].find(c=>c.id===catId);
-  if (!cat) return;
+  if (!cat) {
+    console.error('Category not found:', catId);
+    return;
+  }
 
+  console.log('Opening modal for:', catId);
   openModal(playerIdx, catId, cat);
 }
 
@@ -597,6 +609,10 @@ function onCellClick(e) {
 // SCORE MODAL
 // ══════════════════════════════════════════
 function openModal(playerIdx, catId, cat) {
+  if (pendingCell) {
+    console.warn('Modal already open, closing first');
+    closeModal();
+  }
   pendingCell = { playerIdx, catId, cat };
   const player = players[playerIdx];
   const diceValues = dice.map(d=>d.value).filter(Boolean);
