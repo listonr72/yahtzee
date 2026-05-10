@@ -548,9 +548,14 @@ function attachCellListeners() {
     // Lock if not current player (other players' turns are locked)
     const isLocked = playerIdx !== currentPlayer;
     td.classList.toggle('locked', isLocked);
-    td.addEventListener('click', onCellClick);
   });
 }
+
+// Single delegated listener on scorecard table
+document.getElementById('scorecard').addEventListener('click', function(e) {
+  const td = e.target.closest('td.score-cell');
+  if (td) onCellClick({ currentTarget: td });
+});
 
 function onCellClick(e) {
   const td = e.currentTarget;
