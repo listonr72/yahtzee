@@ -554,16 +554,24 @@ function attachCellListeners() {
 // Single delegated listener on scorecard table
 let scoreboardListener = null;
 function setupScorecardListener() {
-  if (scoreboardListener) document.getElementById('scorecard').removeEventListener('click', scoreboardListener);
+  const scorecard = document.getElementById('scorecard');
+  if (scoreboardListener) {
+    scorecard.removeEventListener('click', scoreboardListener);
+    scorecard.removeEventListener('touchend', scoreboardListener);
+  }
   scoreboardListener = function(e) {
     const td = e.target.closest('td.score-cell');
     if (td && !document.getElementById('modal-overlay').classList.contains('hidden')) {
       e.stopPropagation();
       return;
     }
-    if (td) onCellClick({ currentTarget: td });
+    if (td) {
+      e.preventDefault();
+      onCellClick({ currentTarget: td });
+    }
   };
-  document.getElementById('scorecard').addEventListener('click', scoreboardListener);
+  scorecard.addEventListener('click', scoreboardListener);
+  scorecard.addEventListener('touchend', scoreboardListener);
 }
 setupScorecardListener();
 
