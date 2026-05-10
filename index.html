@@ -561,7 +561,8 @@ function setupScorecardListener() {
   }
   scoreboardListener = function(e) {
     const td = e.target.closest('td.score-cell');
-    if (td && !document.getElementById('modal-overlay').classList.contains('hidden')) {
+    const modalOverlay = document.getElementById('modal-overlay');
+    if (td && modalOverlay && !modalOverlay.classList.contains('hidden')) {
       e.stopPropagation();
       return;
     }
@@ -626,16 +627,25 @@ function openModal(playerIdx, catId, cat) {
   const diceValues = dice.map(d=>d.value).filter(Boolean);
   const hasDice = diceValues.length === 5;
 
-  document.getElementById('modal-title').textContent = cat.label;
-  document.getElementById('modal-sub').textContent = `Scoring for ${player.name}`;
-
+  const modalTitle = document.getElementById('modal-title');
+  const modalSub = document.getElementById('modal-sub');
   const opts = document.getElementById('modal-options');
-  opts.innerHTML = '';
   const inputEl = document.getElementById('modal-input');
   const scratchBtn = document.getElementById('scratch-btn');
   const confirmBtn = document.getElementById('modal-confirm');
   const closeOptions = document.getElementById('modal-close-options');
   const modalActions = document.getElementById('modal-actions');
+
+  // Safety check - if modal elements don't exist, bail out
+  if (!modalTitle || !modalSub || !opts || !inputEl || !scratchBtn || !confirmBtn || !closeOptions || !modalActions) {
+    console.error('Modal elements not found', {modalTitle, modalSub, opts, inputEl, scratchBtn, confirmBtn, closeOptions, modalActions});
+    pendingCell = null;
+    return;
+  }
+
+  modalTitle.textContent = cat.label;
+  modalSub.textContent = `Scoring for ${player.name}`;
+  opts.innerHTML = '';
   inputEl.value = '';
 
   // Upper section (1-6) - count buttons
@@ -676,7 +686,13 @@ function openModal(playerIdx, catId, cat) {
       endTurn();
     };
 
-    document.getElementById('modal-overlay').classList.remove('hidden');
+    const overlay = document.getElementById('modal-overlay');
+    if (!overlay) {
+      console.error('Modal overlay not found!');
+      pendingCell = null;
+      return;
+    }
+    overlay.classList.remove('hidden');
     return;
   }
 
@@ -723,7 +739,8 @@ function openModal(playerIdx, catId, cat) {
 
     wireClose(cat.fixedVal); // default: Score button is pre-selected
     confirmBtn.style.display = 'none';
-    document.getElementById('modal-overlay').classList.remove('hidden');
+    const overlay1 = document.getElementById('modal-overlay');
+    if (overlay1) overlay1.classList.remove('hidden');
     return;
   }
 
@@ -758,9 +775,11 @@ function openModal(playerIdx, catId, cat) {
   inputEl.placeholder = 'Or enter a custom value…';
   closeOptions.style.display = 'block';
   modalActions.style.display = 'none';
-  document.getElementById('modal-overlay').classList.remove('hidden');
+  const overlay2 = document.getElementById('modal-overlay');
+  if (overlay2) overlay2.classList.remove('hidden');
 
-  document.getElementById('modal-cancel').onclick = closeModal;
+  const cancelBtn = document.getElementById('modal-cancel');
+  if (cancelBtn) cancelBtn.onclick = closeModal;
   document.getElementById('modal-close').onclick = () => {
     const customVal = inputEl.value;
     if (customVal !== '') {
@@ -787,7 +806,8 @@ function openModal(playerIdx, catId, cat) {
 }
 
 function closeModal() {
-  document.getElementById('modal-overlay').classList.add('hidden');
+  const overlay = document.getElementById('modal-overlay');
+  if (overlay) overlay.classList.add('hidden');
   pendingCell = null;
 }
 
