@@ -552,10 +552,20 @@ function attachCellListeners() {
 }
 
 // Single delegated listener on scorecard table
-document.getElementById('scorecard').addEventListener('click', function(e) {
-  const td = e.target.closest('td.score-cell');
-  if (td) onCellClick({ currentTarget: td });
-});
+let scoreboardListener = null;
+function setupScorecardListener() {
+  if (scoreboardListener) document.getElementById('scorecard').removeEventListener('click', scoreboardListener);
+  scoreboardListener = function(e) {
+    const td = e.target.closest('td.score-cell');
+    if (td && !document.getElementById('modal-overlay').classList.contains('hidden')) {
+      e.stopPropagation();
+      return;
+    }
+    if (td) onCellClick({ currentTarget: td });
+  };
+  document.getElementById('scorecard').addEventListener('click', scoreboardListener);
+}
+setupScorecardListener();
 
 function onCellClick(e) {
   const td = e.currentTarget;
@@ -789,6 +799,7 @@ function undoEndTurn() {
   turnChoice = previousGameState.turnChoice;
   turnYahtzeeBonusClaimed = previousGameState.turnYahtzeeBonusClaimed;
   previousGameState = null;
+  closeModal();
   resetDice();
   buildScorecard();
   updateEndTurnButton();
