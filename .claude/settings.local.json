@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Start-Process powershell -ArgumentList \"-ExecutionPolicy Bypass -File `\"c:\\\\Source\\\\yahtzee\\\\serve.ps1`\"\" -PassThru | Select-Object Id)",
+      "PowerShell(Start-Sleep -Seconds 2; try { $r = Invoke-WebRequest -Uri \"http://localhost:8080\" -TimeoutSec 3; \"HTTP $\\($r.StatusCode\\) - $\\($r.Content.Length\\) bytes\" } catch { \"Failed: $_\" })",
+      "PowerShell(Start-Sleep 2; Invoke-WebRequest -Uri \"http://localhost:8080/\" -TimeoutSec 3 | Select-Object StatusCode, @{N='Size';E={$_.Content.Length}} | Format-Table -AutoSize)",
+      "PowerShell(curl.exe -s http://localhost:8080/)",
+      "PowerShell(node --version)",
+      "PowerShell(npm --version)",
+      "PowerShell(python3 --version)",
+      "PowerShell(python --version)",
+      "PowerShell(winget install OpenJS.NodeJS.LTS)",
+      "PowerShell(node -v)",
+      "PowerShell(npm -v)",
+      "Skill(update-config)",
+      "Skill(update-config:*)",
+      "PowerShell(cd c:\\\\Source\\\\yahtzee; $proc = Start-Process -FilePath \"node\" -ArgumentList \"server.js\" -PassThru -WindowStyle Hidden; Start-Sleep -Seconds 2; try { $r = Invoke-WebRequest -Uri \"http://localhost:3000\" -UseBasicParsing -TimeoutSec 5; Write-Host \"Status: $\\($r.StatusCode\\)\"; Write-Host \"Length: $\\($r.Content.Length\\)\" } catch { Write-Host \"Error: $_\" }; $proc.Kill\\(\\))",
+      "PowerShell(Stop-Process -Name \"node\" -Force -Confirm:$false 2>$null)",
+      "PowerShell(winget install Git.Git -e)",
+      "WebSearch",
+      "PowerShell(cloudflared --version)",
+      "PowerShell(winget install Cloudflare.cloudflared -e)",
+      "WebFetch(domain:developers.cloudflare.com)",
+      "Bash(git init *)",
+      "Bash(git config *)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
+    ]
+  }
+}
