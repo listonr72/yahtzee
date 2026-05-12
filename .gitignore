@@ -3,3 +3,7 @@ node_modules/
 .DS_Store
 .env
 local-game-state.json
+shots/
+test-roll.js
+models/fbx/
+models/gltf/

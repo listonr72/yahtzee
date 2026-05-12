@@ -4,6 +4,22 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Yahtzee</title>
+<link rel="icon" href="data:,">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+window.THREE = THREE;
+window.GLTFLoader = GLTFLoader;
+document.dispatchEvent(new Event('three-loaded'));
+</script>
 <style>
   :root {
     --bg: #f5f5f5;
@@ -31,12 +47,21 @@
   .logo span { color: var(--accent); }
   .subtitle { text-align: center; color: var(--muted); margin-bottom: 32px; font-size: 0.9rem; }
   .player-inputs { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
-  .player-row { display: flex; gap: 8px; align-items: center; }
+  .player-row { display: flex; flex-direction: column; gap: 6px; }
+  .player-row-top { display: flex; gap: 8px; align-items: center; }
   .player-row input {
     flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
     color: var(--text); padding: 12px 16px; font-size: 1rem; outline: none;
   }
   .player-row input:focus { border-color: var(--accent); }
+  .color-swatches { display: flex; gap: 5px; padding: 2px 4px; flex-wrap: wrap; }
+  .color-swatch {
+    width: 24px; height: 24px; border-radius: 5px; cursor: pointer;
+    border: 2px solid transparent; transition: border-color 0.12s, transform 0.12s;
+    flex-shrink: 0;
+  }
+  .color-swatch:hover { transform: scale(1.15); }
+  .color-swatch.selected { border-color: #fff; transform: scale(1.15); }
   .remove-btn {
     background: none; border: 1px solid var(--border); border-radius: 8px;
     color: var(--muted); width: 36px; height: 36px; cursor: pointer; font-size: 1.1rem;
@@ -123,11 +148,13 @@
   .dice-toggle-label { font-weight: 700; font-size: 0.95rem; }
   .dice-toggle-hint { color: var(--muted); font-size: 0.8rem; }
   .dice-body { margin-top: 14px; }
-  .dice-row { display: flex; justify-content: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+  .dice-row { display: flex; justify-content: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; transition: opacity 0.18s; }
+  .dice-row.cine-hidden { opacity: 0; pointer-events: none; }
   .die {
     width: 52px; height: 52px; border-radius: 10px; background: #fff;
     display: flex; align-items: center; justify-content: center;
     font-size: 1.8rem; cursor: pointer; border: 3px solid transparent;
+    padding: 4px;
     transition: transform 0.1s, border-color 0.15s;
     user-select: none; font-weight: 900; color: #1a1a2e;
     box-shadow: 0 2px 8px rgba(0,0,0,0.4);
@@ -150,6 +177,17 @@
   .roll-count { color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
   .dice-hint { font-size: 0.75rem; color: var(--muted); text-align: center; margin-top: 8px; }
   .reset-dice-btn { background: none; border: none; color: var(--muted); font-size: 0.8rem; cursor: pointer; padding: 4px 8px; }
+
+  #flash-overlay {
+    position: fixed; inset: 0; z-index: 500;
+    background: #fff; opacity: 0; pointer-events: none;
+  }
+  #cinematic-wrap {
+    position: fixed; inset: 0; z-index: 400;
+    background: #12111a; opacity: 0; pointer-events: none;
+    transform-origin: center center;
+  }
+  #cinematic-canvas { display: block; }
 
   /* ── Gameover ── */
   #gameover { padding-top: 40px; text-align: center; }
@@ -203,13 +241,16 @@
 </head>
 <body>
 
+<!-- Fixed background dice canvas -->
+<canvas id="dice-canvas" style="display:none; position:fixed; inset:0; width:100%; height:100%; z-index:-1; pointer-events:none;"></canvas>
+
 <!-- ══════════ MODE SELECT ══════════ -->
-<div id="mode-select" class="screen">
+<div id="mode-select" class="screen" style="padding-top: 40px;">
   <div class="logo">Y<span>ahtzee</span></div>
   <p class="subtitle">Choose how you want to play</p>
   <button class="btn btn-primary" id="local-mode-btn" style="margin-bottom:12px">Local Multiplayer</button>
   <button class="btn btn-secondary" id="online-mode-btn" style="margin-bottom:12px">Online (Share Code)</button>
-  <button class="btn btn-secondary" id="test-mode-btn">Test</button>
+  <button class="btn btn-secondary" id="test-mode-btn" style="display:none">Test</button>
 </div>
 
 <!-- ══════════ ONLINE CHOICE ══════════ -->
@@ -320,8 +361,11 @@
 <!-- ══════════ TEST PAGE ══════════ -->
 <div id="test-page" class="screen" style="padding-top: 40px; text-align: center;">
   <p style="font-size: 1.5rem; font-weight: 700;">New Link Success</p>
-  <button class="btn btn-secondary" onclick="showScreen('mode-select')" style="margin-top: 24px;">← Back</button>
+  <button class="btn btn-secondary" id="test-back-btn" style="margin-top: 24px; width: auto; display: inline-block; padding: 10px 28px;">← Back</button>
 </div>
+
+<div id="flash-overlay"></div>
+<div id="cinematic-wrap"><canvas id="cinematic-canvas"></canvas></div>
 
 <!-- ══════════ SCORE ENTRY MODAL ══════════ -->
 <div class="modal-overlay hidden" id="modal-overlay">
@@ -406,17 +450,46 @@ function initSetup() {
   ['Player 1','Player 2'].forEach(name => addPlayerRow(name));
 }
 
-function addPlayerRow(defaultName='') {
+const DICE_COLORS = [
+  '#ede9e0', // Pearl (default)
+  '#8b1515', // Red
+  '#12257a', // Blue
+  '#42127a', // Purple
+  '#1a5a20', // Forest
+  '#7a3a10', // Orange
+  '#5a0f20', // Maroon
+  '#0f1850', // Navy
+];
+
+function addPlayerRow(defaultName='', defaultColorIdx=null) {
   const container = document.getElementById('player-inputs');
   if (container.children.length >= 6) return;
+  const idx = defaultColorIdx !== null ? defaultColorIdx : container.children.length;
+  const selectedColor = DICE_COLORS[idx % DICE_COLORS.length];
+
   const row = document.createElement('div');
   row.className = 'player-row';
+
+  const swatchesHtml = DICE_COLORS.map(c =>
+    `<div class="color-swatch${c === selectedColor ? ' selected' : ''}" data-color="${c}" style="background:${c}" title="${c}"></div>`
+  ).join('');
+
   row.innerHTML = `
-    <input type="text" placeholder="${defaultName || 'Player name'}" value="${defaultName}" maxlength="16">
-    <button class="remove-btn" onclick="this.parentElement.remove()">✕</button>
+    <div class="player-row-top">
+      <input type="text" placeholder="${defaultName || 'Player name'}" value="${defaultName}" maxlength="16">
+      <button class="remove-btn" onclick="this.closest('.player-row').remove()">✕</button>
+    </div>
+    <div class="color-swatches">${swatchesHtml}</div>
   `;
+
+  row.querySelectorAll('.color-swatch').forEach(swatch => {
+    swatch.addEventListener('click', () => {
+      row.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
+      swatch.classList.add('selected');
+    });
+  });
+
   container.appendChild(row);
-  if(defaultName) {} // focus only on added blank rows
 }
 
 document.getElementById('add-player-btn').onclick = () => addPlayerRow();
@@ -427,15 +500,18 @@ document.getElementById('start-btn').onclick = () => {
 
 function startGame() {
   console.log('startGame called');
-  const inputs = document.querySelectorAll('#player-inputs input');
-  const names = [...inputs].map(i=>i.value.trim()).filter(Boolean);
+  const rows = document.querySelectorAll('#player-inputs .player-row');
+  const playerData = [...rows].map((row, i) => {
+    const name = row.querySelector('input').value.trim();
+    if (!name) return null;
+    const sel = row.querySelector('.color-swatch.selected');
+    const diceColor = sel ? sel.dataset.color : DICE_COLORS[i % DICE_COLORS.length];
+    return { name, diceColor, scores: {}, yahtzeeBonusCount: 0 };
+  }).filter(Boolean);
+  const names = playerData.map(p => p.name);
   console.log('Names:', names);
   if (names.length < 1) { alert('Add at least one player!'); return; }
-  players = names.map(name => ({
-    name,
-    scores: {},
-    yahtzeeBonusCount: 0
-  }));
+  players = playerData;
   currentPlayer = 0;
   turnChoice = { catId: null, value: null };
   resetDice();
@@ -948,6 +1024,11 @@ function updateTurnIndicator() {
 function resetDice() {
   dice = Array(5).fill(null).map(() => ({ value: null, held: false }));
   rollsLeft = 3;
+  _rollerSpinning = _rollerSpinning.map(() => false);
+  _rollerVels = _rollerVels.map(() => ({ x: 0, y: 0, z: 0 }));
+  _rollerMeshes.forEach(die => die.rotation.set(
+    Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2
+  ));
   renderDice();
 }
 
@@ -962,26 +1043,47 @@ document.getElementById('reset-dice-btn').onclick = resetDice;
 
 function rollDice() {
   if (rollsLeft <= 0) return;
-  dice.forEach(d => {
-    if (!d.held) d.value = Math.floor(Math.random()*6)+1;
+  const rolled = [];
+  dice.forEach((d, i) => {
+    if (!d.held) { d.value = Math.floor(Math.random() * 6) + 1; rolled.push(i); }
   });
   rollsLeft--;
   renderDice();
   updateSuggestions();
+  if (window.THREE) {
+    document.getElementById('dice-row').classList.add('cine-hidden');
+    openCinematic(rolled);
+  } else if (_rollerR) startRollAnim(rolled);
+}
+
+const _DIE_PIPS = {
+  1: [[50,50]],
+  2: [[72,28],[28,72]],
+  3: [[72,28],[50,50],[28,72]],
+  4: [[28,28],[72,28],[28,72],[72,72]],
+  5: [[28,28],[72,28],[50,50],[28,72],[72,72]],
+  6: [[28,20],[72,20],[28,50],[72,50],[28,80],[72,80]],
+};
+
+function dieSVG(value) {
+  const pips = _DIE_PIPS[value] || [];
+  const circles = pips.map(([cx,cy]) =>
+    `<circle cx="${cx}" cy="${cy}" r="10" fill="#1a1a2e"/>`
+  ).join('');
+  return `<svg viewBox="0 0 100 100" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">${circles}</svg>`;
 }
 
 function renderDice() {
-  const faces = ['', '⚀','⚁','⚂','⚃','⚄','⚅'];
   const row = document.getElementById('dice-row');
   row.innerHTML = '';
   dice.forEach((d, i) => {
     const el = document.createElement('div');
     el.className = 'die' + (d.held ? ' held' : '') + (d.value===null ? ' blank' : '');
-    el.textContent = d.value ? faces[d.value] : '?';
-    el.onclick = () => toggleHold(i);
+    el.innerHTML = d.value ? dieSVG(d.value) : '<span style="font-size:1.4rem;color:#888">?</span>';
+    el.addEventListener('click', () => toggleHold(i));
+    el.addEventListener('touchend', e => { e.preventDefault(); toggleHold(i); });
     row.appendChild(el);
   });
-
   const rollBtn = document.getElementById('roll-btn');
   rollBtn.disabled = rollsLeft <= 0;
   rollBtn.textContent = rollsLeft === 3 ? 'Roll' : 'Roll Again';
@@ -1066,14 +1168,11 @@ function newGame() {
 // SCREEN SWITCHER
 // ══════════════════════════════════════════
 function showScreen(id) {
-  console.log('showScreen called with id:', id);
-  const screens = document.querySelectorAll('.screen');
-  console.log('Found screens:', screens.length);
-  screens.forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   const target = document.getElementById(id);
-  console.log('Target element:', target);
   if (target) target.classList.add('active');
-  console.log('Active class added, display:', target ? window.getComputedStyle(target).display : 'N/A');
+  const diceCanvas = document.getElementById('dice-canvas');
+  if (diceCanvas) diceCanvas.style.display = id === 'mode-select' ? 'block' : 'none';
 }
 
 // ══════════════════════════════════════════
@@ -1167,6 +1266,10 @@ document.getElementById('online-mode-btn').onclick = () => {
 document.getElementById('test-mode-btn').onclick = () => {
   showScreen('test-page');
 };
+
+document.getElementById('test-back-btn').addEventListener('click', () => {
+  showScreen('mode-select');
+});
 
 document.getElementById('create-game-btn').onclick = () => {
   showScreen('create-game');
@@ -1313,6 +1416,839 @@ if (document.getElementById('reset-game-btn')) {
 }
 
 showScreen('mode-select');
+loadThreeJS(startDice);
+
+// ══════════════════════════════════════════
+// THREE.JS DICE
+// ══════════════════════════════════════════
+let _threeLoaded = false;
+let _diceRenderer = null;
+let _diceAnimId = null;
+let _diceMeshes = [];
+let _diceVels = [];
+
+let _marbleImg = null;
+let _diceModelTemplate = null;
+
+function loadThreeJS(cb) {
+  const ready = () => {
+    const img = new Image();
+    img.onload = () => { _marbleImg = img; cb(); };
+    img.onerror = () => cb();
+    img.src = '/textures/marble.webp';
+  };
+  if (window.THREE) { ready(); return; }
+  document.addEventListener('three-loaded', ready, { once: true });
+}
+
+function loadDiceModel() {
+  if (!window.GLTFLoader) return;
+  const loader = new window.GLTFLoader();
+  loader.load('/models/glb/dice.glb',
+    (gltf) => {
+      const model = gltf.scene;
+      // Normalize to ~1-unit cube
+      const box = new THREE.Box3().setFromObject(model);
+      const size = new THREE.Vector3();
+      box.getSize(size);
+      const maxDim = Math.max(size.x, size.y, size.z);
+      if (maxDim > 0) model.scale.setScalar(1 / maxDim);
+      // Center origin
+      const center = new THREE.Vector3();
+      new THREE.Box3().setFromObject(model).getCenter(center);
+      model.position.sub(center);
+      _diceModelTemplate = model;
+      console.log('Dice model loaded, maxDim=' + maxDim + ' scale=' + (1/maxDim).toFixed(4));
+      // Upgrade background menu dice from cartoon fallback to GLTF
+      if (_diceRenderer && _diceMeshes.length > 0) {
+        const scene = _diceRenderer.scene;
+        _diceMeshes.forEach((old, i) => {
+          const pos = old.position.clone();
+          const rot = old.rotation.clone();
+          const s = old.scale.x;
+          scene.remove(old);
+          const fresh = makeDie();
+          fresh.position.copy(pos);
+          fresh.rotation.copy(rot);
+          fresh.scale.multiplyScalar(s);
+          scene.add(fresh);
+          _diceMeshes[i] = fresh;
+        });
+        // Re-kick velocities since they've decayed while the model was loading
+        _diceVels.forEach(v => {
+          v.x = (Math.random() - 0.5) * 0.025;
+          v.y = (Math.random() - 0.5) * 0.025;
+          v.z = (Math.random() - 0.5) * 0.010;
+        });
+      }
+    },
+    undefined,
+    (err) => console.log('Dice model not found, using box fallback:', err.message)
+  );
+}
+
+function _isMeshPip(mesh) {
+  const name = (mesh.name + ' ' + (mesh.material?.name || '')).toLowerCase();
+  if (name.includes('pip') || name.includes('dot') || name.includes('number')) return true;
+  // Saturation check: pips are gray (r≈g≈b), body is saturated
+  const c = mesh.material?.color;
+  if (!c) return false;
+  const sat = Math.max(c.r, c.g, c.b) - Math.min(c.r, c.g, c.b);
+  return sat < 0.08; // gray = pip
+}
+
+function cloneDiceWithColor(hexColor) {
+  const clone = _diceModelTemplate.clone(true);
+  const [r, g, b] = _parseHex(hexColor || '#ede9e0');
+  const bodyColor = new THREE.Color(r / 255, g / 255, b / 255);
+  const luma = 0.299 * r/255 + 0.587 * g/255 + 0.114 * b/255;
+  const isLight = luma > 0.5;
+  const pipColor = isLight ? new THREE.Color(0x1a1a1a) : new THREE.Color(0xffffff);
+  clone.traverse(child => {
+    if (!child.isMesh) return;
+    const isPip = _isMeshPip(child);
+    child.material = new THREE.MeshStandardMaterial({
+      color: isPip ? pipColor : bodyColor,
+      roughness: isPip ? 0.55 : (isLight ? 0.08 : 0.4),
+      metalness: isPip ? 0.0 : (isLight ? 0.12 : 0.05),
+    });
+    child.castShadow = true;
+  });
+  return clone;
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+const BG_DIE_COLORS = ['#e8332a', '#2255cc', '#f0b800', '#22913a', '#9b30cc', '#e87820'];
+
+function makeCartoonTexture(n) {
+  const S = 256;
+  const cvs = document.createElement('canvas');
+  cvs.width = cvs.height = S;
+  const ctx = cvs.getContext('2d');
+
+  // Pearl face with generous rounded corners
+  roundRect(ctx, 4, 4, S - 8, S - 8, 56);
+  const pearlGrad = ctx.createRadialGradient(S*0.35, S*0.3, 0, S*0.5, S*0.5, S*0.72);
+  pearlGrad.addColorStop(0, '#f8f5f0');
+  pearlGrad.addColorStop(1, '#d8d2c8');
+  ctx.fillStyle = pearlGrad;
+  ctx.fill();
+  ctx.strokeStyle = '#c8c4bc';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  // Dark pips
+  const pipMap = {
+    1: [[.5, .5]],
+    2: [[.72, .28], [.28, .72]],
+    3: [[.72, .28], [.5, .5], [.28, .72]],
+    4: [[.28, .28], [.72, .28], [.28, .72], [.72, .72]],
+    5: [[.28, .28], [.72, .28], [.5, .5], [.28, .72], [.72, .72]],
+    6: [[.28, .21], [.72, .21], [.28, .5], [.72, .5], [.28, .79], [.72, .79]],
+  };
+  const PR = S * 0.1;
+  pipMap[n].forEach(([px, py]) => {
+    ctx.beginPath();
+    ctx.arc(px * S, py * S, PR, 0, Math.PI * 2);
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fill();
+  });
+
+  return new THREE.CanvasTexture(cvs);
+}
+
+function makeDie() {
+  if (_diceModelTemplate) {
+    const clone = _diceModelTemplate.clone(true);
+    clone.traverse(child => {
+      if (!child.isMesh) return;
+      const isPip = _isMeshPip(child);
+      child.material = new THREE.MeshStandardMaterial({
+        color: isPip ? new THREE.Color(0x1a1a1a) : new THREE.Color(0xede9e0),
+        roughness: isPip ? 0.55 : 0.08,
+        metalness: isPip ? 0.0 : 0.12,
+      });
+    });
+    return clone;
+  }
+  // Fallback: box geometry with canvas textures
+  const geo = new THREE.BoxGeometry(1, 1, 1);
+  const faces = [3, 4, 1, 6, 2, 5];
+  const mats = faces.map(n => new THREE.MeshLambertMaterial({ map: makeCartoonTexture(n) }));
+  return new THREE.Mesh(geo, mats);
+}
+
+function initDice() {
+  if (_diceRenderer) return;
+  const canvas = document.getElementById('dice-canvas');
+  if (!canvas || !window.THREE) return;
+
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setSize(W, H);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setClearColor(0x000000, 0);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(50, W / H, 0.1, 100);
+  camera.position.set(0, 0, 10);
+
+  scene.add(new THREE.AmbientLight(0xffffff, 1.1));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.7);
+  sun.position.set(5, 8, 6);
+  scene.add(sun);
+  const fill = new THREE.DirectionalLight(0xffffff, 0.2);
+  fill.position.set(-5, -4, -4);
+  scene.add(fill);
+
+  // Scattered floating positions across the full viewport
+  const configs = [
+    { x: -4.5, y:  2.5, z:  0.0, s: 1.6 },
+    { x:  3.8, y:  3.0, z: -1.0, s: 1.3 },
+    { x: -2.5, y: -2.8, z:  0.5, s: 1.5 },
+    { x:  4.2, y: -2.0, z:  0.0, s: 1.4 },
+    { x:  0.5, y:  0.2, z:  1.0, s: 1.8 },
+  ];
+
+  _diceMeshes = [];
+  _diceVels = [];
+
+  configs.forEach(({ x, y, z, s }) => {
+    const die = makeDie();
+    die.position.set(x, y, z);
+    die.scale.setScalar(s);
+    die.rotation.set(
+      Math.random() * Math.PI * 2,
+      Math.random() * Math.PI * 2,
+      Math.random() * Math.PI * 2
+    );
+    scene.add(die);
+    _diceMeshes.push(die);
+    _diceVels.push({
+      x: (Math.random() - 0.5) * 0.030,
+      y: (Math.random() - 0.5) * 0.030,
+      z: (Math.random() - 0.5) * 0.012,
+    });
+  });
+
+  canvas.addEventListener('click', rollBgDice);
+  canvas.addEventListener('touchend', rollBgDice);
+
+  window.addEventListener('resize', () => {
+    if (!_diceRenderer) return;
+    const w = window.innerWidth, h = window.innerHeight;
+    _diceRenderer.renderer.setSize(w, h);
+    _diceRenderer.camera.aspect = w / h;
+    _diceRenderer.camera.updateProjectionMatrix();
+  });
+
+  _diceRenderer = { renderer, scene, camera };
+}
+
+function rollBgDice() {
+  _diceVels.forEach(v => {
+    v.x = (Math.random() - 0.5) * 0.45;
+    v.y = (Math.random() - 0.5) * 0.45;
+    v.z = (Math.random() - 0.5) * 0.2;
+  });
+}
+
+function animateDice() {
+  if (!_diceRenderer) return;
+  _diceAnimId = requestAnimationFrame(animateDice);
+  const { renderer, scene, camera } = _diceRenderer;
+
+  _diceMeshes.forEach((die, i) => {
+    const v = _diceVels[i];
+    die.rotation.x += v.x;
+    die.rotation.y += v.y;
+    die.rotation.z += v.z;
+    v.x *= 0.992;
+    v.y *= 0.992;
+    v.z *= 0.992;
+    v.x += (Math.random() - 0.5) * 0.0008;
+    v.y += (Math.random() - 0.5) * 0.0008;
+  });
+
+  renderer.render(scene, camera);
+}
+
+function setupShake() {
+  if (!window.DeviceMotionEvent) return;
+
+  const THRESHOLD = 14;
+  const COOLDOWN = 1000;
+  let lastShake = 0;
+
+  function onMotion(e) {
+    const a = e.accelerationIncludingGravity;
+    if (!a) return;
+    const mag = Math.sqrt((a.x || 0) ** 2 + (a.y || 0) ** 2 + (a.z || 0) ** 2);
+    const now = Date.now();
+    if (mag > THRESHOLD && now - lastShake > COOLDOWN) {
+      lastShake = now;
+      rollBgDice();
+    }
+  }
+
+  const canvas = document.getElementById('dice-canvas');
+
+  if (typeof DeviceMotionEvent.requestPermission === 'function') {
+    // iOS 13+ — request permission on first tap
+    const askPermission = () => {
+      DeviceMotionEvent.requestPermission()
+        .then(state => {
+          if (state === 'granted') window.addEventListener('devicemotion', onMotion);
+        })
+        .catch(() => {});
+      canvas.removeEventListener('touchend', askPermission);
+    };
+    canvas.addEventListener('touchend', askPermission);
+  } else {
+    // Android + desktop with motion support
+    window.addEventListener('devicemotion', onMotion);
+  }
+}
+
+function startDice() {
+  initDice();
+  loadDiceModel();
+  setupShake();
+  if (!_diceAnimId) animateDice();
+}
+
+function stopDice() {
+  if (_diceAnimId) { cancelAnimationFrame(_diceAnimId); _diceAnimId = null; }
+}
+
+// ══════════════════════════════════════════
+// 3D DICE ROLLER (in-game)
+// ══════════════════════════════════════════
+let _rollerR = null;
+let _rollerMeshes = [];
+let _rollerVels = [];
+let _rollerSpinning = [];
+let _rollerTargetQ = [];
+
+// Face rotation to bring face N upward (+Y) for overhead camera
+// BoxGeometry face assignment: +X=3, -X=4, +Y=1, -Y=6, +Z=2, -Z=5
+const FACE_ROT = {
+  1: [0, 0, 0],                        // +Y already faces up
+  2: [-Math.PI / 2, 0, 0],             // +Z → Rx(-90°) → becomes +Y
+  3: [0, 0,  Math.PI / 2],             // +X → Rz(+90°) → becomes +Y
+  4: [0, 0, -Math.PI / 2],             // -X → Rz(-90°) → becomes +Y
+  5: [ Math.PI / 2, 0, 0],             // -Z → Rx(+90°) → becomes +Y
+  6: [ Math.PI, 0, 0],                 // -Y → Rx(180°) → becomes +Y
+};
+
+function initRollerDice() {
+  if (_rollerR) return;
+  const row = document.getElementById('dice-row');
+  if (!row || !window.THREE) return;
+
+  const canvas = document.createElement('canvas');
+  canvas.style.cssText = 'display:block;width:100%;border-radius:8px;cursor:pointer;';
+  row.innerHTML = '';
+  row.appendChild(canvas);
+
+  const W = row.clientWidth || Math.min(window.innerWidth - 48, 560);
+  const H = 100;
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setSize(W, H);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setClearColor(0x000000, 0);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(50, W / H, 0.1, 50);
+  camera.position.set(0, 0, 5);
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.9);
+  sun.position.set(4, 6, 5);
+  scene.add(sun);
+
+  // Spread dice evenly across the visible frustum width
+  const halfVW = Math.tan(25 * Math.PI / 180) * 5 * (W / H);
+  const spacing = (halfVW * 1.6) / 4;
+
+  _rollerMeshes = [];
+  _rollerVels = [];
+  _rollerSpinning = [];
+
+  for (let i = 0; i < 5; i++) {
+    const die = makeDie();
+    die.position.set((i - 2) * spacing, 0, 0);
+    die.scale.setScalar(0.68);
+    if (dice[i] && dice[i].value) {
+      const [rx, ry, rz] = FACE_ROT[dice[i].value];
+      die.rotation.set(rx, ry, rz);
+    } else {
+      die.material.forEach(m => { m.transparent = true; m.opacity = 0.3; });
+    }
+    scene.add(die);
+    _rollerMeshes.push(die);
+    _rollerVels.push({ x: 0, y: 0, z: 0 });
+    _rollerSpinning.push(false);
+  }
+
+  canvas.addEventListener('click', e => {
+    const idx = Math.floor((e.offsetX / canvas.clientWidth) * 5);
+    if (idx >= 0 && idx < 5) toggleHold(idx);
+  });
+  canvas.addEventListener('touchend', e => {
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const idx = Math.floor(((e.changedTouches[0].clientX - rect.left) / rect.width) * 5);
+    if (idx >= 0 && idx < 5) toggleHold(idx);
+  });
+
+  _rollerR = { renderer, scene, camera };
+  loopRoller();
+}
+
+function loopRoller() {
+  if (!_rollerR) return;
+  requestAnimationFrame(loopRoller);
+  const { renderer, scene, camera } = _rollerR;
+
+  _rollerMeshes.forEach((die, i) => {
+    const d = dice[i];
+    const v = _rollerVels[i];
+
+    if (_rollerSpinning[i]) {
+      die.rotation.x += v.x;
+      die.rotation.y += v.y;
+      die.rotation.z += v.z;
+      v.x *= 0.93; v.y *= 0.93; v.z *= 0.93;
+
+      const speed = Math.abs(v.x) + Math.abs(v.y) + Math.abs(v.z);
+      if (speed < 0.06 && _rollerTargetQ[i]) {
+        die.quaternion.slerp(_rollerTargetQ[i], 0.15);
+        if (die.quaternion.angleTo(_rollerTargetQ[i]) < 0.008) {
+          die.quaternion.copy(_rollerTargetQ[i]);
+          _rollerSpinning[i] = false;
+        }
+      }
+    }
+
+    // Held: raise up; lerp smoothly
+    const targetY = d.held ? 0.45 : 0;
+    die.position.y += (targetY - die.position.y) * 0.18;
+
+    // Opacity: blank=faded, rolled=full
+    const targetOp = d.value ? 1 : 0.3;
+    die.material.forEach(m => {
+      m.transparent = targetOp < 1 || die.position.y > 0.01;
+      m.opacity += (targetOp - m.opacity) * 0.12;
+    });
+  });
+
+  renderer.render(scene, camera);
+}
+
+// ══════════════════════════════════════════
+// CINEMATIC DICE ROLL
+// ══════════════════════════════════════════
+const delay = ms => new Promise(r => setTimeout(r, ms));
+
+let _cineR = null;
+let _cineMeshes = [];
+let _cineVels = [];
+let _cineTargetQ = [];
+let _cineAnimId = null;
+let _cineRolled = [];
+let _cineDismissResolve = null;
+let _cineBoundsRef = null;
+
+// One-time tap-to-dismiss listener on the cinematic overlay
+(function() {
+  const wrap = document.getElementById('cinematic-wrap');
+  const dismiss = () => { if (_cineDismissResolve) { _cineDismissResolve(); _cineDismissResolve = null; } };
+  wrap.addEventListener('click', dismiss);
+  wrap.addEventListener('touchend', e => { e.preventDefault(); dismiss(); });
+})();
+
+function openCinematic(rolled) {
+  _cineRolled = rolled;
+  _runCinematic(rolled);
+}
+
+async function _runCinematic(rolled) {
+  _cineDismissResolve = null;
+  const dismissed = new Promise(r => { _cineDismissResolve = r; });
+
+  const flash = document.getElementById('flash-overlay');
+  flash.style.transition = 'opacity 0.07s';
+  flash.style.opacity = '1';
+  await delay(70);
+  flash.style.transition = 'opacity 0.4s';
+  flash.style.opacity = '0';
+
+  const wrap = document.getElementById('cinematic-wrap');
+  wrap.style.transition = 'opacity 0.2s';
+  wrap.style.opacity = '1';
+  wrap.style.pointerEvents = 'auto';
+  wrap.style.transform = '';
+
+  try {
+    initCineScene(rolled);
+    await dismissed;
+  } finally {
+    _cineDismissResolve = null;
+    document.getElementById('dice-row')?.classList.remove('cine-hidden');
+  }
+  await zoomToRow();
+}
+
+const _PIP_LAYOUTS = {
+  1: [[0.5, 0.5]],
+  2: [[0.72, 0.28], [0.28, 0.72]],
+  3: [[0.72, 0.28], [0.5, 0.5], [0.28, 0.72]],
+  4: [[0.28, 0.28], [0.72, 0.28], [0.28, 0.72], [0.72, 0.72]],
+  5: [[0.28, 0.28], [0.72, 0.28], [0.5, 0.5], [0.28, 0.72], [0.72, 0.72]],
+  6: [[0.28, 0.2], [0.72, 0.2], [0.28, 0.5], [0.72, 0.5], [0.28, 0.8], [0.72, 0.8]],
+};
+
+function _parseHex(hex) {
+  const h = hex.replace('#','');
+  return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)];
+}
+
+function makeCineTexture(n, color) {
+  const S = 512;
+  const cvs = document.createElement('canvas');
+  cvs.width = cvs.height = S;
+  const ctx = cvs.getContext('2d');
+
+  const [r, g, b] = _parseHex(color || '#ede9e0');
+  const luma = 0.299 * r/255 + 0.587 * g/255 + 0.114 * b/255;
+  const isLight = luma > 0.5;
+  const light = `rgb(${Math.min(255,r+(isLight?30:55))},${Math.min(255,g+(isLight?30:55))},${Math.min(255,b+(isLight?30:55))})`;
+  const dark  = `rgb(${Math.round(r*(isLight?0.82:0.4))},${Math.round(g*(isLight?0.82:0.4))},${Math.round(b*(isLight?0.82:0.4))})`;
+
+  ctx.save();
+  roundRect(ctx, 0, 0, S, S, 72);
+  ctx.clip();
+  const bg = ctx.createRadialGradient(S * 0.38, S * 0.32, 0, S * 0.5, S * 0.5, S * 0.75);
+  bg.addColorStop(0, light);
+  bg.addColorStop(1, dark);
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, S, S);
+  ctx.restore();
+
+  const pips = _PIP_LAYOUTS[n] || [];
+  const PR = S * 0.085;
+  const pipFill = isLight ? '#1a1a1a' : '#f0f0f0';
+  pips.forEach(([px, py]) => {
+    const cx = px * S, cy = py * S;
+    ctx.save();
+    ctx.shadowColor = isLight ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.7)';
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetX = 2;
+    ctx.shadowOffsetY = 3;
+    ctx.beginPath();
+    ctx.arc(cx, cy, PR, 0, Math.PI * 2);
+    ctx.fillStyle = pipFill;
+    ctx.fill();
+    ctx.restore();
+  });
+
+  return new THREE.CanvasTexture(cvs);
+}
+
+function makeCineDie(color) {
+  // Always use BoxGeometry so FACE_ROT maps correctly to pip values.
+  // GLTF model face numbering is unknown and causes mismatches with the scoreboard.
+  const geo = new THREE.BoxGeometry(1, 1, 1);
+  const faces = [3, 4, 1, 6, 2, 5]; // +X, -X, +Y, -Y, +Z, -Z
+  const [r, g, b] = _parseHex(color || '#ede9e0');
+  const luma = 0.299 * r/255 + 0.587 * g/255 + 0.114 * b/255;
+  const mats = faces.map(n => new THREE.MeshStandardMaterial({
+    map: makeCineTexture(n, color),
+    roughness: luma > 0.5 ? 0.10 : 0.40,
+    metalness: luma > 0.5 ? 0.10 : 0.05,
+  }));
+  const mesh = new THREE.Mesh(geo, mats);
+  mesh.castShadow = true;
+  return mesh;
+}
+
+function initCineScene(rolled) {
+  if (_cineAnimId) { cancelAnimationFrame(_cineAnimId); _cineAnimId = null; }
+
+  const canvas = document.getElementById('cinematic-canvas');
+  if (!canvas) return;
+  const W = window.innerWidth, H = window.innerHeight;
+
+  let renderer, scene, camera;
+
+  if (!_cineR) {
+    renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.setClearColor(0x000000, 1);
+
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x000000);
+
+    camera = new THREE.PerspectiveCamera(58, W / H, 0.1, 100);
+    camera.position.set(0, 11, 2.5);
+    camera.lookAt(0, 0, -1);
+
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x111111, 0.4));
+
+    const spot = new THREE.SpotLight(0xfffbe8, 11.0);
+    spot.position.set(-4, 11, 3);
+    spot.angle = Math.PI / 6;
+    spot.penumbra = 0.45;
+    spot.castShadow = true;
+    spot.shadow.mapSize.set(2048, 2048);
+    spot.shadow.bias = -0.001;
+    scene.add(spot);
+    const st = new THREE.Object3D();
+    st.position.set(0, 0, -1);
+    scene.add(st);
+    spot.target = st;
+
+    const spot2 = new THREE.SpotLight(0xfff5e0, 8.0);
+    spot2.position.set(5, 10, 2);
+    spot2.angle = Math.PI / 5;
+    spot2.penumbra = 0.55;
+    spot2.castShadow = false;
+    scene.add(spot2);
+    const st2 = new THREE.Object3D();
+    st2.position.set(0, 0, -1);
+    scene.add(st2);
+    spot2.target = st2;
+
+    // Soft fill from camera-right, kept dim to preserve contrast
+    const fill = new THREE.DirectionalLight(0x99bbdd, 0.5);
+    fill.position.set(6, 4, 7);
+    scene.add(fill);
+
+    // Warm rim from behind — makes pip edges glow and separates dice from bg
+    const rim = new THREE.DirectionalLight(0xffe8cc, 1.1);
+    rim.position.set(1, 4, -9);
+    scene.add(rim);
+
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(80, 80),
+      new THREE.MeshStandardMaterial({ color: 0x0d0d0d, roughness: 0.95, metalness: 0.0 })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    _cineR = { renderer, scene, camera };
+  } else {
+    ({ renderer, scene, camera } = _cineR);
+    _cineMeshes.forEach(m => {
+      m.traverse(child => {
+        if (!child.isMesh) return;
+        child.geometry?.dispose();
+        if (Array.isArray(child.material)) child.material.forEach(mat => { if (mat.map) mat.map.dispose(); mat.dispose(); });
+        else if (child.material) { if (child.material.map) child.material.map.dispose(); child.material.dispose(); }
+      });
+      scene.remove(m);
+    });
+  }
+
+  renderer.setSize(W, H);
+  camera.aspect = W / H;
+  camera.updateProjectionMatrix();
+
+  _cineMeshes = [];
+  _cineVels = [];
+  _cineTargetQ = [];
+
+  // Compute visible ground bounds from camera frustum
+  const GND = 0.5;
+  // Pre-compute non-overlapping landing spots
+  const MIN_DIST = 1.6;
+  const spots = [];
+  for (let i = 0; i < 5; i++) {
+    let placed = false;
+    for (let attempt = 0; attempt < 300 && !placed; attempt++) {
+      const x = (Math.random() - 0.5) * 7;
+      const z = (Math.random() - 0.5) * 4 - 0.5;
+      if (spots.every(s => Math.hypot(s.x - x, s.z - z) >= MIN_DIST)) {
+        spots.push({ x, z }); placed = true;
+      }
+    }
+    if (!placed) spots.push({ x: (i - 2) * MIN_DIST, z: 0 });
+  }
+
+  for (let i = 0; i < 5; i++) {
+    const playerColor = (players[currentPlayer] && players[currentPlayer].diceColor) || DICE_COLORS[0];
+    const die = makeCineDie(playerColor);
+    const isRolled = rolled.includes(i);
+    const lx = spots[i].x, lz = spots[i].z;
+    die.position.set(lx, isRolled ? 3 + Math.random() * 2 : GND, lz);
+    die.scale.multiplyScalar(1.05);
+
+    if (!isRolled && dice[i] && dice[i].value) {
+      const [rx, ry, rz] = FACE_ROT[dice[i].value];
+      die.rotation.set(rx, ry, rz);
+    } else {
+      die.rotation.set(Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2);
+    }
+
+    scene.add(die);
+    _cineMeshes.push(die);
+
+    const s = isRolled ? 1 : 0;
+    _cineVels.push({
+      ax: (Math.random() - 0.5) * 1.0 * s,
+      ay: (Math.random() - 0.5) * 1.0 * s,
+      az: (Math.random() - 0.5) * 0.6 * s,
+      vy: isRolled ? -0.05 : 0,
+      vx: 0, vz: 0,
+      bounces: 0,
+      landed: false,
+      posSettled: !isRolled,
+      spinDone: !isRolled,
+    });
+
+    if (dice[i] && dice[i].value) {
+      const [rx, ry, rz] = FACE_ROT[dice[i].value];
+      _cineTargetQ[i] = new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz));
+    }
+  }
+
+  animateCine();
+}
+
+function animateCine() {
+  if (!_cineR) return;
+  _cineAnimId = requestAnimationFrame(animateCine);
+  const { renderer, scene, camera } = _cineR;
+  const GND = 0.5;
+
+  _cineMeshes.forEach((die, i) => {
+    const v = _cineVels[i];
+
+    if (!v.posSettled) {
+      // Gravity while airborne
+      if (!v.landed) {
+        v.vy -= 0.028;
+        die.position.y += v.vy;
+        // Tumble spin in air
+        die.rotation.x += v.ax; die.rotation.y += v.ay; die.rotation.z += v.az;
+      }
+
+      die.position.x += v.vx;
+      die.position.z += v.vz;
+
+      if (die.position.y <= GND) {
+        die.position.y = GND;
+        if (!v.landed) {
+          // First landing: kick into a brief rolling skid
+          v.landed = true;
+          v.vx = (Math.random() - 0.5) * 0.20;
+          v.vz = (Math.random() - 0.5) * 0.14;
+        }
+        v.vy = Math.abs(v.vy) * 0.25;
+        v.vx *= 0.82; v.vz *= 0.82;
+        v.ax *= 0.55; v.ay *= 0.55; v.az *= 0.55;
+        v.bounces++;
+        if (v.bounces >= 2 || Math.abs(v.vy) < 0.015) { v.vy = 0; }
+      }
+
+      // Rolling friction once on ground
+      if (v.landed) {
+        const spd = Math.sqrt(v.vx * v.vx + v.vz * v.vz);
+        if (spd > 0.001) {
+          // Spin proportionally to rolling speed
+          const rollAxis = new THREE.Vector3(-v.vz, 0, v.vx).normalize();
+          die.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(rollAxis, spd * 2.5));
+          v.vx *= 0.955; v.vz *= 0.955;
+        } else {
+          v.vx = 0; v.vz = 0;
+          // Also fade out any residual tumble spin
+          v.ax *= 0.90; v.ay *= 0.90; v.az *= 0.90;
+          const spinSpd = Math.abs(v.ax) + Math.abs(v.ay) + Math.abs(v.az);
+          if (spinSpd < 0.02 && v.vy === 0) v.posSettled = true;
+        }
+      }
+    }
+
+    // Snap to correct face once fully stopped
+    if (v.posSettled && !v.spinDone && _cineTargetQ[i]) {
+      die.quaternion.slerp(_cineTargetQ[i], 0.15);
+      if (die.quaternion.angleTo(_cineTargetQ[i]) < 0.01) {
+        die.quaternion.copy(_cineTargetQ[i]);
+        v.spinDone = true;
+      }
+    }
+  });
+
+  renderer.render(scene, camera);
+}
+
+function waitCineSettle() {
+  return new Promise(resolve => {
+    setTimeout(resolve, 6000); // hard cap
+    const check = () => {
+      const done = _cineVels.every((v, i) => !_cineRolled.includes(i) || (v.spinDone && v.posSettled));
+      done ? resolve() : setTimeout(check, 120);
+    };
+    check();
+  });
+}
+
+async function zoomToRow() {
+  const wrap = document.getElementById('cinematic-wrap');
+  const row = document.getElementById('dice-row');
+  if (!row) { wrap.style.opacity = '0'; wrap.style.pointerEvents = 'none'; return; }
+
+  const rr = row.getBoundingClientRect();
+  const tx = rr.left + rr.width / 2 - window.innerWidth / 2;
+  const ty = rr.top + rr.height / 2 - window.innerHeight / 2;
+  const sx = Math.max(rr.width / window.innerWidth, 0.02);
+  const sy = Math.max(rr.height / window.innerHeight, 0.02);
+
+  wrap.style.transition = 'transform 0.44s cubic-bezier(0.55,0,0.8,0.45), opacity 0.22s 0.2s';
+  wrap.style.transform = `translate(${tx}px,${ty}px) scale(${sx},${sy})`;
+  wrap.style.opacity = '0';
+
+  await delay(500);
+  if (_cineAnimId) { cancelAnimationFrame(_cineAnimId); _cineAnimId = null; }
+  wrap.style.transition = '';
+  wrap.style.transform = '';
+  wrap.style.pointerEvents = 'none';
+  document.getElementById('dice-row')?.classList.remove('cine-hidden');
+}
+
+function startRollAnim(indices) {
+  indices.forEach(i => {
+    _rollerVels[i] = {
+      x: (Math.random() - 0.5) * 0.6,
+      y: (Math.random() - 0.5) * 0.6,
+      z: (Math.random() - 0.5) * 0.3,
+    };
+    _rollerSpinning[i] = true;
+    if (dice[i] && dice[i].value) {
+      const [rx, ry, rz] = FACE_ROT[dice[i].value];
+      _rollerTargetQ[i] = new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz));
+    }
+  });
+}
 </script>
 </body>
 </html>
