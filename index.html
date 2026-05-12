@@ -1767,6 +1767,15 @@ const FACE_ROT = {
   5: [ Math.PI / 2, 0, 0],             // -Z → Rx(+90°) → becomes +Y
   6: [ Math.PI, 0, 0],                 // -Y → Rx(180°) → becomes +Y
 };
+// Corrected face rotations for GLTF model (empirically derived — GLTF face layout differs from BoxGeometry)
+const GLTF_FACE_ROT = {
+  1: [ Math.PI / 2, 0, 0],
+  2: [0, 0, 0],
+  3: [0, 0, -Math.PI / 2],
+  4: [0, 0,  Math.PI / 2],
+  5: [ Math.PI, 0, 0],
+  6: [-Math.PI / 2, 0, 0],
+};
 
 function initRollerDice() {
   if (_rollerR) return;
@@ -1990,10 +1999,12 @@ function makeCineTexture(n, color) {
 }
 
 function makeCineDie(color) {
-  // Always use BoxGeometry so FACE_ROT maps correctly to pip values.
-  // GLTF model face numbering is unknown and causes mismatches with the scoreboard.
+  if (_diceModelTemplate) {
+    return cloneDiceWithColor(color || '#ede9e0');
+  }
+  // Fallback if GLTF not loaded yet
   const geo = new THREE.BoxGeometry(1, 1, 1);
-  const faces = [3, 4, 1, 6, 2, 5]; // +X, -X, +Y, -Y, +Z, -Z
+  const faces = [3, 4, 1, 6, 2, 5];
   const [r, g, b] = _parseHex(color || '#ede9e0');
   const luma = 0.299 * r/255 + 0.587 * g/255 + 0.114 * b/255;
   const mats = faces.map(n => new THREE.MeshStandardMaterial({
@@ -2079,7 +2090,8 @@ function initCineScene(rolled) {
     _cineMeshes.forEach(m => {
       m.traverse(child => {
         if (!child.isMesh) return;
-        child.geometry?.dispose();
+        // Only dispose geometry for non-GLTF (BoxGeometry fallback); GLTF geometry is shared
+        if (!_diceModelTemplate) child.geometry?.dispose();
         if (Array.isArray(child.material)) child.material.forEach(mat => { if (mat.map) mat.map.dispose(); mat.dispose(); });
         else if (child.material) { if (child.material.map) child.material.map.dispose(); child.material.dispose(); }
       });
@@ -2120,8 +2132,9 @@ function initCineScene(rolled) {
     die.position.set(lx, isRolled ? 3 + Math.random() * 2 : GND, lz);
     die.scale.multiplyScalar(1.05);
 
+    const rotMap = _diceModelTemplate ? GLTF_FACE_ROT : FACE_ROT;
     if (!isRolled && dice[i] && dice[i].value) {
-      const [rx, ry, rz] = FACE_ROT[dice[i].value];
+      const [rx, ry, rz] = rotMap[dice[i].value];
       die.rotation.set(rx, ry, rz);
     } else {
       die.rotation.set(Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2);
@@ -2144,7 +2157,7 @@ function initCineScene(rolled) {
     });
 
     if (dice[i] && dice[i].value) {
-      const [rx, ry, rz] = FACE_ROT[dice[i].value];
+      const [rx, ry, rz] = rotMap[dice[i].value];
       _cineTargetQ[i] = new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz));
     }
   }
