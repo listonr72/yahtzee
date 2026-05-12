@@ -135,6 +135,7 @@ document.dispatchEvent(new Event('three-loaded'));
   td.score-cell:active { background: rgba(255,255,255,0.05); }
   td.score-cell.filled { color: var(--text); cursor: default; }
   td.score-cell.scratch { color: var(--muted); cursor: default; }
+  td.score-cell.tentative { cursor: pointer; outline: 2px dashed var(--accent); outline-offset: -2px; }
   td.score-cell.suggest { background: var(--suggest); color: var(--accent); font-weight: 700; }
   td.score-cell.active-player { background: rgba(15,52,96,0.6); }
   td.score-cell.locked { opacity: 0.5; cursor: default; }
@@ -188,6 +189,12 @@ document.dispatchEvent(new Event('three-loaded'));
     transform-origin: center center;
   }
   #cinematic-canvas { display: block; }
+  #cine-player-label {
+    position: absolute; top: 24px; left: 0; right: 0;
+    text-align: center; font-size: 1.4rem; font-weight: 800;
+    letter-spacing: 0.04em; pointer-events: none;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.7);
+  }
 
   /* ── Gameover ── */
   #gameover { padding-top: 40px; text-align: center; }
@@ -365,7 +372,10 @@ document.dispatchEvent(new Event('three-loaded'));
 </div>
 
 <div id="flash-overlay"></div>
-<div id="cinematic-wrap"><canvas id="cinematic-canvas"></canvas></div>
+<div id="cinematic-wrap">
+  <div id="cine-player-label"></div>
+  <canvas id="cinematic-canvas"></canvas>
+</div>
 
 <!-- ══════════ SCORE ENTRY MODAL ══════════ -->
 <div class="modal-overlay hidden" id="modal-overlay">
@@ -580,9 +590,11 @@ function addCatRow(tbody, cat) {
   players.forEach((p,i) => {
     const score = p.scores[cat.id];
     const filled = score !== undefined;
-    const cls = filled
+    const isTentative = filled && i === currentPlayer && turnChoice.catId === cat.id;
+    let cls = filled
       ? (score === 0 ? 'score-cell scratch' : 'score-cell filled')
       : 'score-cell';
+    if (isTentative) cls += ' tentative';
     const val = filled ? (score === 0 ? '—' : score) : '';
     cells += `<td class="${cls}" data-player="${i}" data-cat="${cat.id}">${val}</td>`;
   });
@@ -682,7 +694,7 @@ function onCellClick(e) {
     console.log('Cell is locked');
     return;
   }
-  if (td.classList.contains('filled') || td.classList.contains('scratch')) {
+  if ((td.classList.contains('filled') || td.classList.contains('scratch')) && !td.classList.contains('tentative')) {
     console.log('Cell already filled/scratched');
     return;
   }
@@ -1900,6 +1912,12 @@ async function _runCinematic(rolled) {
   flash.style.opacity = '0';
 
   const wrap = document.getElementById('cinematic-wrap');
+  const label = document.getElementById('cine-player-label');
+  if (label) {
+    const p = players[currentPlayer];
+    label.textContent = p.name + "'s Roll";
+    label.style.color = p.color || '#ffffff';
+  }
   wrap.style.transition = 'opacity 0.2s';
   wrap.style.opacity = '1';
   wrap.style.pointerEvents = 'auto';
