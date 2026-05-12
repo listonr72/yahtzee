@@ -208,7 +208,8 @@
   <div class="logo">Y<span>ahtzee</span></div>
   <p class="subtitle">Choose how you want to play</p>
   <button class="btn btn-primary" id="local-mode-btn" style="margin-bottom:12px">Local Multiplayer</button>
-  <button class="btn btn-secondary" id="online-mode-btn">Online (Share Code)</button>
+  <button class="btn btn-secondary" id="online-mode-btn" style="margin-bottom:12px">Online (Share Code)</button>
+  <button class="btn btn-secondary" id="test-mode-btn">Test</button>
 </div>
 
 <!-- ══════════ ONLINE CHOICE ══════════ -->
@@ -314,6 +315,12 @@
   <button class="btn btn-primary" onclick="newGame()" style="margin-bottom:12px">Play Again</button>
   <button class="btn btn-secondary" onclick="showSetup()">Change Players</button>
   <div class="history-section" id="history-section"></div>
+</div>
+
+<!-- ══════════ TEST PAGE ══════════ -->
+<div id="test-page" class="screen" style="padding-top: 40px; text-align: center;">
+  <p style="font-size: 1.5rem; font-weight: 700;">New Link Success</p>
+  <button class="btn btn-secondary" onclick="showScreen('mode-select')" style="margin-top: 24px;">← Back</button>
 </div>
 
 <!-- ══════════ SCORE ENTRY MODAL ══════════ -->
@@ -1155,6 +1162,10 @@ document.getElementById('local-mode-btn').addEventListener('click', async () => 
 
 document.getElementById('online-mode-btn').onclick = () => {
   showScreen('online-choice');
+};
+
+document.getElementById('test-mode-btn').onclick = () => {
+  showScreen('test-page');
 };
 
 document.getElementById('create-game-btn').onclick = () => {
