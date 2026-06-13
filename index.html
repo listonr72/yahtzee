@@ -573,6 +573,7 @@ function buildScorecard() {
 
   updateTurnIndicator();
   attachCellListeners();
+  setupScorecardListener();
   updateEndTurnButton();
 }
 
@@ -611,13 +612,15 @@ function addBonusRow(tbody) {
     const isCurrent = i === currentPlayer;
     const pending = isCurrent && turnYahtzeeBonusClaimed;
     const total = committed + (pending ? 1 : 0);
-    const val = total > 0 ? `+${total * 100}` : (isCurrent ? '＋' : '');
+    const yahtzeeScored = p.scores['yahtzee'] !== undefined;
+    const enabled = isCurrent && yahtzeeScored;
+    const val = total > 0 ? `+${total * 100}` : (enabled ? '＋' : '');
     const cls = [
       'score-cell',
       pending ? 'suggest' : (total > 0 ? 'filled' : ''),
-      isCurrent ? '' : 'locked'
+      enabled ? '' : 'locked'
     ].filter(Boolean).join(' ');
-    cells += `<td class="${cls}" data-player="${i}" data-cat="yahtzeBonus" style="${isCurrent ? 'cursor:pointer' : ''}">${val}</td>`;
+    cells += `<td class="${cls}" data-player="${i}" data-cat="yahtzeBonus" style="${enabled ? 'cursor:pointer' : ''}">${val}</td>`;
   });
   tr.innerHTML = cells;
   tbody.appendChild(tr);
@@ -646,28 +649,28 @@ function attachCellListeners() {
   });
 }
 
-// Single delegated listener on scorecard table
+// Single delegated click listener on scorecard table.
+// Note: do NOT add a touchend listener — mobile/tablet taps already produce
+// click events, and doubling them caused the modal lifecycle to desync
+// (pendingCell mis-stacked) which froze score-cell input until reload.
 let scoreboardListener = null;
 function setupScorecardListener() {
   const scorecard = document.getElementById('scorecard');
+  if (!scorecard) return;
   if (scoreboardListener) {
     scorecard.removeEventListener('click', scoreboardListener);
-    scorecard.removeEventListener('touchend', scoreboardListener);
   }
   scoreboardListener = function(e) {
     const td = e.target.closest('td.score-cell');
+    if (!td) return;
     const modalOverlay = document.getElementById('modal-overlay');
-    if (td && modalOverlay && !modalOverlay.classList.contains('hidden')) {
+    if (modalOverlay && !modalOverlay.classList.contains('hidden')) {
       e.stopPropagation();
       return;
     }
-    if (td) {
-      e.preventDefault();
-      onCellClick({ currentTarget: td });
-    }
+    onCellClick({ currentTarget: td });
   };
   scorecard.addEventListener('click', scoreboardListener);
-  scorecard.addEventListener('touchend', scoreboardListener);
 }
 setupScorecardListener();
 
@@ -681,10 +684,7 @@ function onCellClick(e) {
   // Yahtzee Bonus toggle — handle before locked/filled checks
   if (catId === 'yahtzeBonus') {
     if (playerIdx !== currentPlayer) return;
-    if (players[playerIdx].scores['yahtzee'] === undefined) {
-      alert('You must have already scored in the Yahtzee box to claim a bonus.');
-      return;
-    }
+    if (players[playerIdx].scores['yahtzee'] === undefined) return;
     turnYahtzeeBonusClaimed = !turnYahtzeeBonusClaimed;
     buildScorecard();
     return;
