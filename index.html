@@ -613,7 +613,10 @@ function addBonusRow(tbody) {
     const pending = isCurrent && turnYahtzeeBonusClaimed;
     const total = committed + (pending ? 1 : 0);
     const yahtzeeScored = p.scores['yahtzee'] !== undefined;
-    const enabled = isCurrent && yahtzeeScored;
+    // Only enable once the Yahtzee was scored on a prior turn — scoring it
+    // this turn doesn't count toward the bonus.
+    const scoredThisTurn = isCurrent && turnChoice.catId === 'yahtzee';
+    const enabled = isCurrent && yahtzeeScored && !scoredThisTurn;
     const val = total > 0 ? `+${total * 100}` : (enabled ? '＋' : '');
     const cls = [
       'score-cell',
@@ -1020,7 +1023,7 @@ function updateTurnIndicator() {
   // Highlight current player column
   document.querySelectorAll('td.score-cell').forEach(td => {
     const pi = parseInt(td.dataset.player);
-    td.classList.toggle('active-player', pi === currentPlayer && !td.classList.contains('filled') && !td.classList.contains('scratch'));
+    td.classList.toggle('active-player', pi === currentPlayer && !td.classList.contains('filled') && !td.classList.contains('scratch') && !td.classList.contains('locked'));
   });
 
   // Highlight header
@@ -1896,10 +1899,21 @@ let _cineRolled = [];
 let _cineDismissResolve = null;
 let _cineBoundsRef = null;
 
-// One-time tap-to-dismiss listener on the cinematic overlay
+// One-time tap-to-dismiss listener on the cinematic overlay.
+// Also force-releases pointer-events on dismiss as a safety net so the
+// invisible overlay can never capture clicks if the rest of the cinematic
+// flow throws before zoomToRow() restores it.
+function _releaseCineWrap() {
+  const w = document.getElementById('cinematic-wrap');
+  if (!w) return;
+  w.style.pointerEvents = 'none';
+}
 (function() {
   const wrap = document.getElementById('cinematic-wrap');
-  const dismiss = () => { if (_cineDismissResolve) { _cineDismissResolve(); _cineDismissResolve = null; } };
+  const dismiss = () => {
+    _releaseCineWrap();
+    if (_cineDismissResolve) { _cineDismissResolve(); _cineDismissResolve = null; }
+  };
   wrap.addEventListener('click', dismiss);
   wrap.addEventListener('touchend', e => { e.preventDefault(); dismiss(); });
 })();
@@ -1933,13 +1947,20 @@ async function _runCinematic(rolled) {
   wrap.style.transform = '';
 
   try {
-    initCineScene(rolled);
-    await dismissed;
+    try {
+      initCineScene(rolled);
+      await dismissed;
+    } finally {
+      _cineDismissResolve = null;
+      document.getElementById('dice-row')?.classList.remove('cine-hidden');
+    }
+    await zoomToRow();
   } finally {
-    _cineDismissResolve = null;
-    document.getElementById('dice-row')?.classList.remove('cine-hidden');
+    // Final safety net: regardless of how the cinematic flow exits
+    // (throw, early return, double-invocation race), never leave the
+    // full-screen overlay capturing clicks.
+    _releaseCineWrap();
   }
-  await zoomToRow();
 }
 
 const _PIP_LAYOUTS = {
