@@ -677,6 +677,51 @@ function setupScorecardListener() {
 }
 setupScorecardListener();
 
+// Diagnostic: when input "freezes", logs what element is actually on top
+// of every click. Surfaces stuck overlays (modal, cinematic, etc.) that
+// would silently swallow score-cell clicks.
+document.addEventListener('click', e => {
+  const top = document.elementFromPoint(e.clientX, e.clientY);
+  const insideCell = e.target.closest && e.target.closest('td.score-cell');
+  if (top && top !== e.target) {
+    console.log('[click] hit', e.target.tagName + '#' + e.target.id, 'topmost:',
+      top.tagName + '#' + top.id, 'classes:', top.className,
+      'cellTarget:', !!insideCell);
+  }
+}, true);
+
+// Esc / triple-click on the turn badge: nuke any stuck overlay state so
+// the user can recover without reloading. Logs what was actually stuck.
+function _forceUnfreeze(reason) {
+  const overlay = document.getElementById('modal-overlay');
+  const wrap = document.getElementById('cinematic-wrap');
+  const flash = document.getElementById('flash-overlay');
+  console.warn('[unfreeze]', reason, {
+    pendingCell,
+    modalHidden: overlay ? overlay.classList.contains('hidden') : 'no-overlay',
+    cineOpacity: wrap ? wrap.style.opacity : 'no-wrap',
+    cinePointer: wrap ? getComputedStyle(wrap).pointerEvents : 'no-wrap',
+    flashOpacity: flash ? flash.style.opacity : 'no-flash',
+  });
+  if (overlay) overlay.classList.add('hidden');
+  if (wrap) { wrap.style.pointerEvents = 'none'; wrap.style.opacity = '0'; }
+  if (flash) flash.style.opacity = '0';
+  pendingCell = null;
+  if (_cineDismissResolve) { _cineDismissResolve(); _cineDismissResolve = null; }
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') _forceUnfreeze('Escape key');
+});
+let _titleClicks = 0, _titleClickTimer = null;
+document.addEventListener('click', e => {
+  const badge = e.target.closest('#turn-badge, .game-title');
+  if (!badge) return;
+  _titleClicks++;
+  clearTimeout(_titleClickTimer);
+  _titleClickTimer = setTimeout(() => { _titleClicks = 0; }, 600);
+  if (_titleClicks >= 3) { _titleClicks = 0; _forceUnfreeze('triple-click on turn badge'); }
+});
+
 function onCellClick(e) {
   const td = e.currentTarget;
   const playerIdx = parseInt(td.dataset.player);
@@ -1898,6 +1943,10 @@ let _cineAnimId = null;
 let _cineRolled = [];
 let _cineDismissResolve = null;
 let _cineBoundsRef = null;
+// Generation counter — each cinematic run gets a unique id, and any stale
+// run skips mutating wrap state (opacity / pointer-events / transform) so
+// it can't stomp the active cinematic and leave the overlay stuck.
+let _cineGen = 0;
 
 // One-time tap-to-dismiss listener on the cinematic overlay.
 // Also force-releases pointer-events on dismiss as a safety net so the
@@ -1924,7 +1973,12 @@ function openCinematic(rolled) {
 }
 
 async function _runCinematic(rolled) {
-  _cineDismissResolve = null;
+  // If a previous cinematic is still awaiting dismissal, resolve it so its
+  // flow can unwind. The gen check below ensures it can't stomp our state.
+  if (_cineDismissResolve) { _cineDismissResolve(); _cineDismissResolve = null; }
+  const myGen = ++_cineGen;
+  const isCurrent = () => _cineGen === myGen;
+
   const dismissed = new Promise(r => { _cineDismissResolve = r; });
 
   const flash = document.getElementById('flash-overlay');
@@ -1951,15 +2005,18 @@ async function _runCinematic(rolled) {
       initCineScene(rolled);
       await dismissed;
     } finally {
-      _cineDismissResolve = null;
-      document.getElementById('dice-row')?.classList.remove('cine-hidden');
+      if (isCurrent()) {
+        _cineDismissResolve = null;
+        document.getElementById('dice-row')?.classList.remove('cine-hidden');
+      }
     }
-    await zoomToRow();
+    if (isCurrent()) await zoomToRow();
   } finally {
     // Final safety net: regardless of how the cinematic flow exits
     // (throw, early return, double-invocation race), never leave the
-    // full-screen overlay capturing clicks.
-    _releaseCineWrap();
+    // full-screen overlay capturing clicks — but only if no newer
+    // cinematic has taken over (would stomp pointer-events: auto).
+    if (isCurrent()) _releaseCineWrap();
   }
 }
 
@@ -2265,6 +2322,7 @@ function waitCineSettle() {
 }
 
 async function zoomToRow() {
+  const myGen = _cineGen;
   const wrap = document.getElementById('cinematic-wrap');
   const row = document.getElementById('dice-row');
   if (!row) { wrap.style.opacity = '0'; wrap.style.pointerEvents = 'none'; return; }
@@ -2280,6 +2338,10 @@ async function zoomToRow() {
   wrap.style.opacity = '0';
 
   await delay(500);
+  // If a newer cinematic started during the delay, do not touch wrap
+  // state — it now belongs to that run, and stomping pointer-events here
+  // would leave the new overlay un-dismissable.
+  if (_cineGen !== myGen) return;
   if (_cineAnimId) { cancelAnimationFrame(_cineAnimId); _cineAnimId = null; }
   wrap.style.transition = '';
   wrap.style.transform = '';
