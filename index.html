@@ -612,9 +612,9 @@ function addBonusRow(tbody) {
     const isCurrent = i === currentPlayer;
     const pending = isCurrent && turnYahtzeeBonusClaimed;
     const total = committed + (pending ? 1 : 0);
-    const yahtzeeScored = p.scores['yahtzee'] !== undefined;
-    // Only enable once the Yahtzee was scored on a prior turn — scoring it
-    // this turn doesn't count toward the bonus.
+    // Only enable once a non-zero Yahtzee was scored on a prior turn.
+    // A scratched (zero) Yahtzee does not unlock the bonus.
+    const yahtzeeScored = (p.scores['yahtzee'] || 0) > 0;
     const scoredThisTurn = isCurrent && turnChoice.catId === 'yahtzee';
     const enabled = isCurrent && yahtzeeScored && !scoredThisTurn;
     const val = total > 0 ? `+${total * 100}` : (enabled ? '＋' : '');
@@ -656,6 +656,10 @@ function attachCellListeners() {
 // Note: do NOT add a touchend listener — mobile/tablet taps already produce
 // click events, and doubling them caused the modal lifecycle to desync
 // (pendingCell mis-stacked) which froze score-cell input until reload.
+// Also: do NOT gate this on modal-overlay state. When the modal is shown
+// it physically covers the cells (z-index 100, inset 0), so clicks can't
+// reach them anyway; an extra check here is dead weight that can silently
+// swallow clicks if the overlay class state ever desyncs.
 let scoreboardListener = null;
 function setupScorecardListener() {
   const scorecard = document.getElementById('scorecard');
@@ -666,11 +670,6 @@ function setupScorecardListener() {
   scoreboardListener = function(e) {
     const td = e.target.closest('td.score-cell');
     if (!td) return;
-    const modalOverlay = document.getElementById('modal-overlay');
-    if (modalOverlay && !modalOverlay.classList.contains('hidden')) {
-      e.stopPropagation();
-      return;
-    }
     onCellClick({ currentTarget: td });
   };
   scorecard.addEventListener('click', scoreboardListener);
@@ -732,7 +731,9 @@ function onCellClick(e) {
   // Yahtzee Bonus toggle — handle before locked/filled checks
   if (catId === 'yahtzeBonus') {
     if (playerIdx !== currentPlayer) return;
-    if (players[playerIdx].scores['yahtzee'] === undefined) return;
+    // Require a non-zero Yahtzee already scored on a prior turn.
+    if (!((players[playerIdx].scores['yahtzee'] || 0) > 0)) return;
+    if (turnChoice.catId === 'yahtzee') return;
     turnYahtzeeBonusClaimed = !turnYahtzeeBonusClaimed;
     buildScorecard();
     return;
